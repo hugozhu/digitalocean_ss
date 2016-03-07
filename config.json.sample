@@ -1,0 +1,11 @@
+{
+    "token":"<your_digital_ocean_access_token>",
+    "domain":"<your_domain>",
+    "dnspod": {
+    	"login_email":"<dnspod_login_email>",
+    	"login_password":"<dnspod_login_password>",
+    	"domain_id":123456,
+    	"record_id":456789,
+    	"sub_domain":"sf"
+    }
+}
