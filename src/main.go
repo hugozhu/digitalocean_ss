@@ -138,15 +138,19 @@ func AllSSHKey(client *godo.Client) []godo.Key {
 	return keys
 }
 
-func DeleteAllDroplets(client *godo.Client) error {
+func DeleteDroplet(client *godo.Client, name string) error {
 	droplets, err := DropletList(client)
 	if err != nil {
 		return err
 	}
 	for _, droplet := range droplets {
+		if droplet.Name != name {
+			continue
+		}
 		_, err := client.Droplets.Delete(droplet.ID)
 		if err != nil {
 			log.Println("failed to delete droplet:", droplet.Name, err)
+			return err
 		} else {
 			log.Println("delete droplet:", droplet.Name)
 		}
@@ -178,7 +182,7 @@ func main() {
 	client := godo.NewClient(oauthClient)
 
 	if destroy {
-		DeleteAllDroplets(client)
+		DeleteDroplet(client, c.Domain)
 	} else if create {
 		image := SnapshotByName(client, c.Domain)
 		if image == nil {
