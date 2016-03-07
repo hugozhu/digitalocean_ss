@@ -117,12 +117,17 @@ func CreateDroplet(client *godo.Client, dropletName string, image *godo.Image) (
 	return newDroplet, err
 }
 
-func FirstSnapshot(client *godo.Client) *godo.Image {
+func SnapshotByName(client *godo.Client, name string) *godo.Image {
 	images, _, err := client.Images.ListUser(nil)
 	if err != nil {
 		log.Println(err)
 	}
-	return &images[0]
+	for _, image := range images {
+		if image.Name == name {
+			return &image
+		}
+	}
+	return nil
 }
 
 func AllSSHKey(client *godo.Client) []godo.Key {
@@ -175,8 +180,12 @@ func main() {
 	if destroy {
 		DeleteAllDroplets(client)
 	} else if create {
-		image := FirstSnapshot(client)
-		droplet, err := CreateDroplet(client, "sf.myalert.info", image)
+		image := SnapshotByName(client, c.Domain)
+		if image == nil {
+			log.Fatal("Can't find snapshot:", c.Domain)
+			os.Exit(-1)
+		}
+		droplet, err := CreateDroplet(client, c.Domain, image)
 		for {
 			droplet, _, err = client.Droplets.Get(droplet.ID)
 			if err != nil {
