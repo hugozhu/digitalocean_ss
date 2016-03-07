@@ -170,7 +170,7 @@ func init() {
 }
 
 func main() {
-	pat := os.Getenv("TOKEN")
+	pat := c.Token
 	tokenSource := &TokenSource{
 		AccessToken: pat,
 	}
