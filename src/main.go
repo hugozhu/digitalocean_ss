@@ -1,12 +1,58 @@
 package main
 
-import "golang.org/x/oauth2"
-import "github.com/digitalocean/godo"
-import "log"
-import "os"
+import (
+	"encoding/json"
+	"flag"
+	"github.com/digitalocean/godo"
+	"golang.org/x/oauth2"
+	"io/ioutil"
+	"log"
+	"net/http"
+	"net/url"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+)
 
 type TokenSource struct {
 	AccessToken string
+}
+
+type Dnspod struct {
+	Email     string `json:"login_email,omitempty"`
+	Password  string `json:"login_password,omitempty"`
+	DomainId  int    `json:"domain_id,omitempty"`
+	RecordId  int    `json:"record_id,omitempty"`
+	SubDomain string `json:"sub_domain,omitempty"`
+}
+
+type Config struct {
+	Token  string
+	Domain string
+	Dnspod Dnspod
+}
+
+func UpdateDnspod(ip string) error {
+	client := &http.Client{}
+	body := url.Values{
+		"login_email":    {c.Dnspod.Email},
+		"login_password": {c.Dnspod.Password},
+		"format":         {"json"},
+		"domain_id":      {strconv.Itoa(c.Dnspod.DomainId)},
+		"record_id":      {strconv.Itoa(c.Dnspod.RecordId)},
+		"sub_domain":     {c.Dnspod.SubDomain},
+		"record_line":    {"默认"},
+		"value":          {ip},
+	}
+	req, err := http.NewRequest("POST", "https://dnsapi.cn/Record.Ddns", strings.NewReader(body.Encode()))
+	req.Header.Set("Accept", "text/json")
+	req.Header.Set("Content-type", "application/x-www-form-urlencoded")
+	resp, err := client.Do(req)
+	defer resp.Body.Close()
+	bytes, _ := ioutil.ReadAll(resp.Body)
+	log.Println(string(bytes))
+	return err
 }
 
 func (t *TokenSource) Token() (*oauth2.Token, error) {
@@ -87,6 +133,37 @@ func AllSSHKey(client *godo.Client) []godo.Key {
 	return keys
 }
 
+func DeleteAllDroplets(client *godo.Client) error {
+	droplets, err := DropletList(client)
+	if err != nil {
+		return err
+	}
+	for _, droplet := range droplets {
+		_, err := client.Droplets.Delete(droplet.ID)
+		if err != nil {
+			log.Println("failed to delete droplet:", droplet.Name, err)
+		} else {
+			log.Println("delete droplet:", droplet.Name)
+		}
+	}
+	return nil
+}
+
+var config string
+var ip string
+var destroy bool
+var create bool
+var c Config
+
+func init() {
+	flag.StringVar(&config, "config", "config.json", "config file path")
+	flag.BoolVar(&destroy, "destroy", false, "destroy all droplets")
+	flag.BoolVar(&create, "create", false, "create a droplet")
+	flag.Parse()
+	bytes, _ := ioutil.ReadFile(config)
+	json.Unmarshal(bytes, &c)
+}
+
 func main() {
 	pat := os.Getenv("TOKEN")
 	tokenSource := &TokenSource{
@@ -95,21 +172,25 @@ func main() {
 	oauthClient := oauth2.NewClient(oauth2.NoContext, tokenSource)
 	client := godo.NewClient(oauthClient)
 
-	image := FirstSnapshot(client)
-	droplet, err := CreateDroplet(client, "sf.myalert.info", image)
-	for {
-		droplet, _, err = client.Droplets.Get(droplet.ID)
-		if err != nil {
-			log.Println(err)
-			break
+	if destroy {
+		DeleteAllDroplets(client)
+	} else if create {
+		image := FirstSnapshot(client)
+		droplet, err := CreateDroplet(client, "sf.myalert.info", image)
+		for {
+			droplet, _, err = client.Droplets.Get(droplet.ID)
+			if err != nil {
+				log.Println(err)
+				break
+			}
+			if !droplet.Locked && len(droplet.Networks.V4) > 0 {
+				ip = droplet.Networks.V4[0].IPAddress
+				break
+			}
+			log.Print(".")
+			time.Sleep(1)
 		}
-		if len(droplet.Networks.V4) > 0 {
-			ip := droplet.Networks.V4[0].IPAddress
-			log.Println(ip)
-			break
-		}
+		log.Println(ip)
+		UpdateDnspod(ip)
 	}
-
-	// droplets, err := DropletList(client)
-	// log.Println(droplets, err)
 }
